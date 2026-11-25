@@ -1,0 +1,52 @@
+# Flume's reusable workflow for client repositories. A client repo calls it
+# from the short workflow in the README: `ticket` is the required status check,
+# `sync` moves what each pull request names in Flume. Published from Flume's
+# repository by scripts/publish-action.sh (SPEC 8.37, docs/INFRA.md "GitHub").
+name: Flume
+
+on:
+  workflow_call:
+    inputs:
+      flume-url:
+        description: Flume's address
+        type: string
+        default: https://flume.zestdev.uk
+      no-ticket-label:
+        description: The label that lets a pull request through with no key
+        type: string
+        default: no-ticket
+    secrets:
+      FLUME_TOKEN:
+        description: The repository's token, from the Flume project's settings page
+        required: true
+
+jobs:
+  ticket:
+    name: ticket
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: TandemCreativeDev/flume-action@v1
+        with:
+          mode: check
+          no-ticket-label: ${{ inputs.no-ticket-label }}
+
+  sync:
+    name: sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One pull request's events in order, so a late "opened" never follows its merge.
+    concurrency:
+      group: flume-sync-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: TandemCreativeDev/flume-action@v1
+        with:
+          mode: sync
+          flume-token: ${{ secrets.FLUME_TOKEN }}
+          flume-url: ${{ inputs.flume-url }}

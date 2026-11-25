@@ -1,0 +1,21 @@
+name: Flume
+description: Checks a pull request names a Flume story or task, and moves them in Flume as the pull request goes (SPEC 8.37).
+inputs:
+  mode:
+    description: "check (the ticket check) or sync (send the pull request to Flume)"
+    required: true
+  github-token:
+    description: The token that reads reviews and writes the pull request's comments
+    default: ${{ github.token }}
+  flume-token:
+    description: "sync: the repository's Flume token, from the project's settings page"
+    default: ""
+  flume-url:
+    description: "sync: Flume's address"
+    default: https://flume.zestdev.uk
+  no-ticket-label:
+    description: "check: the label that lets a pull request through with no key"
+    default: no-ticket
+runs:
+  using: node24
+  main: index.mjs
