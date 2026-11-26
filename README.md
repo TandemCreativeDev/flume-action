@@ -11,7 +11,7 @@ Write `Closes CT2-32` (or `Fixes`, `Resolves`) in a pull request's description t
 | Converted back to a draft | In progress |
 | Merged | Done, confirmed by whoever merged it |
 
-A task's key moves only that task, through the same steps: In progress on a draft, In review when opened for review, Done when merged. Stacked pull requests close the story when the last one linked to it merges. The Action comments on the pull request saying where each item moved. Bot pull requests, pull requests into other branches, and keys inside backticks or code blocks are ignored.
+A task's key moves only that task, through the same steps: In progress on a draft, In review when opened for review, Done when merged. Stacked pull requests close the story when the last one linked to it merges. For each event the Action posts a new comment saying where each item moved, so the pull request keeps a record; it tags the pull request's author when something didn't move as asked (a key Flume doesn't know, a story that is out of its release, done or reopened, a merge by someone Flume can't match) or when the sync couldn't reach Flume. Bot pull requests, pull requests into other branches, and keys inside backticks or code blocks are ignored.
 
 ## Setting up a repository
 

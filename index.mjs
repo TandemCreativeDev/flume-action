@@ -4,7 +4,9 @@
 //   Fixes, Resolves or Part of, or has the no-ticket label, explaining how to
 //   fix it in one sticky comment that is removed once the check passes.
 // - sync: sends the pull request to Flume, which moves what it names, and
-//   comments where each item moved.
+//   posts a new comment for each event saying where each item moved, so the
+//   pull request keeps a record. Anything that didn't move as asked, and any
+//   failure to reach Flume, tags the pull request's author.
 //
 // Both skip pull requests a bot opened and any not into the default branch.
 // No dependencies: it runs on the runner's Node with fetch.
@@ -21,7 +23,7 @@ const pr = event.pull_request
 const repo = event.repository
 const api = process.env.GITHUB_API_URL || "https://api.github.com"
 
-/** A sticky comment's hidden marker, one per mode. */
+/** A comment's hidden marker, one per mode. */
 const marker = (kind) => `<!-- flume:${kind} -->`
 
 async function github(path, init = {}) {
@@ -33,10 +35,19 @@ async function github(path, init = {}) {
   return res.status === 204 || res.status === 404 ? null : res.json()
 }
 
-/** Writes, edits in place or (with null) removes this mode's one comment on the pull request. */
+/** Every comment on the pull request, oldest first, however many pages. */
+async function allComments() {
+  const all = []
+  for (let page = 1; ; page++) {
+    const batch = (await github(`/repos/${repo.full_name}/issues/${pr.number}/comments?per_page=100&page=${page}`)) ?? []
+    all.push(...batch)
+    if (batch.length < 100) return all
+  }
+}
+
+/** Writes, edits in place or (with null) removes the ticket check's one comment: a fix-it note, not a record. */
 async function sticky(kind, body) {
-  const comments = (await github(`/repos/${repo.full_name}/issues/${pr.number}/comments?per_page=100`)) ?? []
-  const mine = comments.find((c) => c.body?.includes(marker(kind)))
+  const mine = (await allComments()).find((c) => c.body?.includes(marker(kind)))
   if (body === null) {
     if (mine) await github(`/repos/${repo.full_name}/issues/comments/${mine.id}`, { method: "DELETE" })
     return
@@ -60,6 +71,17 @@ function skipped() {
   if (pr.user?.type === "Bot") return "Opened by a bot"
   if (pr.base?.ref !== repo.default_branch) return `Into ${pr.base?.ref}, not ${repo.default_branch}`
   return null
+}
+
+/**
+ * Posts a new sync comment, so the pull request keeps every move. Skipped when
+ * it would repeat the latest one word for word: a push that moved nothing.
+ */
+async function record(body) {
+  const text = `${marker("sync")}\n${body}`
+  const latest = (await allComments()).filter((c) => c.body?.includes(marker("sync"))).at(-1)
+  if (latest?.body === text) return
+  await github(`/repos/${repo.full_name}/issues/${pr.number}/comments`, { method: "POST", body: JSON.stringify({ body: text }) })
 }
 
 async function check() {
@@ -97,7 +119,7 @@ async function sync() {
   const answer = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(`Flume answered ${res.status}: ${answer.error ?? "no reason given"}`)
   if (answer.ignored) return console.log(`Flume ignored it: ${answer.ignored}`)
-  if (answer.comment) await sticky("sync", answer.comment)
+  if (answer.comment) await record(answer.comment)
   console.log(answer.comment ?? "Names nothing in Flume.")
 }
 
@@ -108,6 +130,14 @@ try {
   else if (mode === "sync") await sync()
   else throw new Error(`mode is check or sync, not ${mode || "empty"}`)
 } catch (error) {
-  console.log(`::error::${error instanceof Error ? error.message : error}`)
+  const message = error instanceof Error ? error.message : String(error)
+  console.log(`::error::${message}`)
   process.exitCode = 1
+  // A sync that fails moves nothing in Flume: say so where the author will see it.
+  if (mode === "sync" && pr) {
+    const who = pr.user?.login ? `@${pr.user.login}, ` : ""
+    await record(`**Flume** · Sync failed\n\n${who}Flume didn't record this pull request event, so nothing it names moved: ${message}`).catch((e) =>
+      console.log(`::error::Couldn't comment on the pull request either: ${e instanceof Error ? e.message : e}`),
+    )
+  }
 }
